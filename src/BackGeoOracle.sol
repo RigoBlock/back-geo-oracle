@@ -153,16 +153,32 @@ contract BackGroOracle is BaseHook {
         CallbackData memory data = abi.decode(rawData, (CallbackData));
         (, int24 tick,,) = manager.getSlot0(id);
         bool shouldBackrun = true;
+        int128 tickDelta = int128(tick - last.prevTick);
+
+        // we are only interested in the absolute tick delta
+        if (tickDelta < 0) tickDelta = -tickDelta;
+
+        // define minimum ticks to save gas for small amount
+        int128 minimumTicks = 410;
+        int128 targetTicks = 4558;
+        int128 limitTicks = targetTicks * 2;
+        int128 multiplier = 1100; // 1.1 in basis points
 
         // overwrite undefined amount with backrun amount
-        if ((tick - last.prevTick) > 9116 || (tick - last.prevTick) < -9116) {
-            // Full backrun
-        } else if ((tick - last.prevTick) > 4558 || (tick - last.prevTick) < -4558) {
-            data.params.amountSpecified = data.params.amountSpecified * 4 * 1.1;
-        } else if ((tick - last.prevTick) > 410 || (tick - last.prevTick) < -410) {
-            data.params.amountSpecified = data.params.amountSpecified * 4 * 0.9;
-        } else {
+        if (tickDelta < minimumTicks) {
+            // early escape to save gas for normal transactions
             shouldBackrun = false;
+        } else if (tickDelta < targetTicks) {
+            // TODO: we may want to start with a higher percentage at minimum?
+            int128 numerator = (tickDelta - minimumTicks) * 10000; // Convert to basis points for precision
+            int128 denominator = (targetTicks - minimumTicks) * 10000;
+            data.params.amountSpecified = data.params.amountSpecified * numerator / denominator;
+        } else if (tickDelta < limitTicks) {
+            int128 numerator = 5000 + (5000 * (tickDelta - targetTicks) / (limitTicks - targetTicks));
+            uint128 percentage = uint128(min(numerator, 10000)); // Ensure it doesn't exceed 100%
+            data.params.amountSpecified = data.params.amountSpecified * int128(percentage) / 10000;
+        } else {
+            // Full backrun
         }
 
         BalanceDelta memory delta;
@@ -175,5 +191,14 @@ contract BackGroOracle is BaseHook {
         }
 
         return abi.encode(delta);
+    }
+
+    // Helper functions for min and max
+    function min(int128 a, int128 b) private pure returns (int128) {
+        return a < b ? a : b;
+    }
+
+    function max(int128 a, int128 b) private pure returns (int128) {
+        return a > b ? a : b;
     }
 }
