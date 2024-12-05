@@ -162,21 +162,19 @@ contract BackGroOracle is BaseHook {
         int128 minimumTicks = 410;
         int128 targetTicks = 4558;
         int128 limitTicks = targetTicks * 2;
-        int128 multiplier = 1100; // 1.1 in basis points
 
         // overwrite undefined amount with backrun amount
-        if (tickDelta < minimumTicks) {
+        if (tickDelta <= minimumTicks) {
             // early escape to save gas for normal transactions
             shouldBackrun = false;
-        } else if (tickDelta < targetTicks) {
-            // TODO: we may want to start with a higher percentage at minimum?
-            int128 numerator = (tickDelta - minimumTicks) * 10000; // Convert to basis points for precision
+        } else if (tickDelta <= targetTicks) {
+            int128 numerator = (tickDelta - minimumTicks) * 10000;
             int128 denominator = (targetTicks - minimumTicks) * 10000;
             data.params.amountSpecified = data.params.amountSpecified * numerator / denominator;
         } else if (tickDelta < limitTicks) {
-            int128 numerator = 5000 + (5000 * (tickDelta - targetTicks) / (limitTicks - targetTicks));
-            uint128 percentage = uint128(min(numerator, 10000)); // Ensure it doesn't exceed 100%
-            data.params.amountSpecified = data.params.amountSpecified * int128(percentage) / 10000;
+            int128 numerator = (tickDelta - targetTicks) * 10000 + 5000;
+            int128 denominator = (limitTicks - targetTicks) * 10000 * 2;
+            data.params.amountSpecified = data.params.amountSpecified * numerator / denominator;
         } else {
             // Full backrun
         }
