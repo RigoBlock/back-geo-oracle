@@ -17,13 +17,23 @@ library Oracle {
     /// @param targetTimestamp Invalid timestamp targeted to be observed
     error TargetPredatesOldestObservation(uint32 oldestTimestamp, uint32 targetTimestamp);
 
+    /// @notice This is the max amount of ticks in either direction that the pool is allowed without triggering a backrun
+    int128 constant MIN_ABS_TICK_MOVE = 410;
+    /// @notice This is the target amount of ticks in either direction for a 50% backrun
+    int128 constant TARGET_ABS_TICK_MOVE = 4558;
+    /// @notice This is the min amount of ticks in either direction that triggers a full backrun
+    int128 constant LIMIT_ABS_TICK_MOVE = 9116;
+
+    /// @dev slot dimensions has been modified to add an int24 prevTick
     struct Observation {
         // the block timestamp of the observation
         uint32 blockTimestamp;
+        // the previous printed tick to calculate the change from time to time
+        int24 prevTick;
         // the tick accumulator, i.e. tick * time elapsed since the pool was first initialized
-        int56 tickCumulative;
+        int48 tickCumulative;
         // the seconds per liquidity, i.e. seconds elapsed / max(1, liquidity) since the pool was first initialized
-        uint160 secondsPerLiquidityCumulativeX128;
+        uint144 secondsPerLiquidityCumulativeX128;
         // whether or not the observation is initialized
         bool initialized;
     }
@@ -44,9 +54,10 @@ library Oracle {
             uint32 delta = blockTimestamp - last.blockTimestamp;
             return Observation({
                 blockTimestamp: blockTimestamp,
-                tickCumulative: last.tickCumulative + int56(tick) * int56(uint56(delta)),
+                prevTick: tick,
+                tickCumulative: last.tickCumulative + int48(tick) * int48(uint48(delta)),
                 secondsPerLiquidityCumulativeX128: last.secondsPerLiquidityCumulativeX128
-                    + ((uint160(delta) << 128) / (liquidity > 0 ? liquidity : 1)),
+                    + ((uint144(delta) << 128) / (liquidity > 0 ? liquidity : 1)),
                 initialized: true
             });
         }
@@ -55,14 +66,16 @@ library Oracle {
     /// @notice Initialize the oracle array by writing the first slot. Called once for the lifecycle of the observations array
     /// @param self The stored oracle array
     /// @param time The time of the oracle initialization, via block.timestamp truncated to uint32
+    /// @param tick The active tick at the time of the new observation
     /// @return cardinality The number of populated elements in the oracle array
     /// @return cardinalityNext The new length of the oracle array, independent of population
-    function initialize(Observation[65535] storage self, uint32 time)
+    function initialize(Observation[65535] storage self, uint32 time, int24 tick)
         internal
         returns (uint16 cardinality, uint16 cardinalityNext)
     {
         self[0] = Observation({
             blockTimestamp: time,
+            prevTick: tick,
             tickCumulative: 0,
             secondsPerLiquidityCumulativeX128: 0,
             initialized: true
@@ -262,7 +275,7 @@ library Oracle {
         uint16 index,
         uint128 liquidity,
         uint16 cardinality
-    ) internal view returns (int56 tickCumulative, uint160 secondsPerLiquidityCumulativeX128) {
+    ) internal view returns (int48 tickCumulative, uint144 secondsPerLiquidityCumulativeX128) {
         unchecked {
             if (secondsAgo == 0) {
                 Observation memory last = self[index];
@@ -287,10 +300,10 @@ library Oracle {
                 uint32 targetDelta = target - beforeOrAt.blockTimestamp;
                 return (
                     beforeOrAt.tickCumulative
-                        + ((atOrAfter.tickCumulative - beforeOrAt.tickCumulative) / int56(uint56(observationTimeDelta)))
-                            * int56(uint56(targetDelta)),
+                        + ((atOrAfter.tickCumulative - beforeOrAt.tickCumulative) / int48(uint48(observationTimeDelta)))
+                            * int48(uint48(targetDelta)),
                     beforeOrAt.secondsPerLiquidityCumulativeX128
-                        + uint160(
+                        + uint144(
                             (
                                 uint256(
                                     atOrAfter.secondsPerLiquidityCumulativeX128
@@ -322,12 +335,12 @@ library Oracle {
         uint16 index,
         uint128 liquidity,
         uint16 cardinality
-    ) internal view returns (int56[] memory tickCumulatives, uint160[] memory secondsPerLiquidityCumulativeX128s) {
+    ) internal view returns (int48[] memory tickCumulatives, uint144[] memory secondsPerLiquidityCumulativeX128s) {
         unchecked {
             if (cardinality == 0) revert OracleCardinalityCannotBeZero();
 
-            tickCumulatives = new int56[](secondsAgos.length);
-            secondsPerLiquidityCumulativeX128s = new uint160[](secondsAgos.length);
+            tickCumulatives = new int48[](secondsAgos.length);
+            secondsPerLiquidityCumulativeX128s = new uint144[](secondsAgos.length);
             for (uint256 i = 0; i < secondsAgos.length; i++) {
                 (tickCumulatives[i], secondsPerLiquidityCumulativeX128s[i]) =
                     observeSingle(self, time, secondsAgos[i], tick, index, liquidity, cardinality);
