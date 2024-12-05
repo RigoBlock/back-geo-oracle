@@ -77,9 +77,10 @@ contract BackGeoOracle is BaseHook {
         // there may only be one pool per pair of tokens that use this hook. The tick spacing is set to the maximum
         // because we only allow max range liquidity in this pool. The currency0 must be base currency to prevent
         // rogue oracles.
-        if (
-            key.fee != 0 || key.tickSpacing != TickMath.MAX_TICK_SPACING || Currency.unwrap(key.currency0) != address(0)
-        ) revert OnlyOneOraclePoolAllowed();
+        require(
+            key.fee == 0 && key.tickSpacing == TickMath.MAX_TICK_SPACING && key.currency0.isAddressZero(),
+            OnlyOneOraclePoolAllowed()
+        );
         return BackGeoOracle.beforeInitialize.selector;
     }
 
@@ -101,10 +102,11 @@ contract BackGeoOracle is BaseHook {
         bytes calldata
     ) external override onlyPoolManager returns (bytes4) {
         int24 maxTickSpacing = TickMath.MAX_TICK_SPACING;
-        if (
-            params.tickLower != TickMath.minUsableTick(maxTickSpacing)
-                || params.tickUpper != TickMath.maxUsableTick(maxTickSpacing)
-        ) revert OraclePositionsMustBeFullRange();
+        require(
+            params.tickLower == TickMath.minUsableTick(maxTickSpacing)
+                && params.tickUpper == TickMath.maxUsableTick(maxTickSpacing),
+            OraclePositionsMustBeFullRange()
+        );
         _updatePool(key);
         return BackGeoOracle.beforeAddLiquidity.selector;
     }
