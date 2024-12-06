@@ -46,7 +46,7 @@ contract BackGeoOracleTest is Test, Fixtures {
             uint160(
                 Hooks.BEFORE_INITIALIZE_FLAG | Hooks.AFTER_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG
                     | Hooks.AFTER_SWAP_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG| Hooks.AFTER_SWAP_RETURNS_DELTA_FLAG
-            ) ^ (0x444444 << 136) // Namespace the hook to avoid collisions
+            ) ^ (0x4444 << 144) // Namespace the hook to avoid collisions
         );
         bytes memory constructorArgs = abi.encode(manager); //Add all the necessary constructor arguments from the hook
         deployCodeTo("BackGeoOracle.sol:BackGeoOracle", constructorArgs, flags);
@@ -134,6 +134,7 @@ contract BackGeoOracleTest is Test, Fixtures {
         int24 tick = 0;
         vm.expectCall(address(hook), abi.encodeCall(hook.afterInitialize, (address(this), key, SQRT_PRICE_1_1, tick)));
         manager.initialize(key, SQRT_PRICE_1_1);
+        key.currency1 = currency1;
     }
 
     function testHookAfterInitialize() public {
@@ -152,6 +153,8 @@ contract BackGeoOracleTest is Test, Fixtures {
         manager.initialize(key, SQRT_PRICE_1_1);
 
         assertTrue(hook.getState(key).cardinalityNext == 1);
+        // TODO: remove if state gets reset after every test
+        key.currency1 = currency1;
     }
 
     function testHookBeforeSwap() public {
@@ -159,7 +162,6 @@ contract BackGeoOracleTest is Test, Fixtures {
         bool zeroForOne = true;
         int256 amountSpecified = -1e18; // Example amount for swap
 
-        vm.expectRevert();
         swap(
             key,
             zeroForOne,
@@ -172,7 +174,6 @@ contract BackGeoOracleTest is Test, Fixtures {
         // Perform a swap to test afterSwap hook
         bool zeroForOne = true;
         int256 amountSpecified = -1e18;
-        vm.expectRevert();
         /*BalanceDelta swapDelta =*/ swap(key, zeroForOne, amountSpecified, ZERO_BYTES);
     }
 
@@ -185,7 +186,7 @@ contract BackGeoOracleTest is Test, Fixtures {
             TickMath.getSqrtPriceAtTick(tickUpper),
             additionalLiquidity
         );
-        
+
         // TODO: check why call does not revert as expected
         /*vm.expectRevert(
             abi.encodeWithSelector(
@@ -236,7 +237,6 @@ contract BackGeoOracleTest is Test, Fixtures {
     function testHookAfterSwapReturnDelta() public {
         bool zeroForOne = true;
         int256 amountSpecified = -1e18;
-        vm.expectRevert();
         /*BalanceDelta swapDelta =*/ swap(key, zeroForOne, amountSpecified, ZERO_BYTES);
         //assertEq(int256(swapDelta.amount0()), amountSpecified);
     }

@@ -5,10 +5,11 @@ import {BaseHook} from "v4-periphery/src/base/hooks/BaseHook.sol";
 
 import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
 import {Hooks} from "v4-core/src/libraries/Hooks.sol";
+import {SafeCast} from "v4-core/src/libraries/SafeCast.sol";
 import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
 import {TickMath} from "v4-core/src/libraries/TickMath.sol";
-import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
-import {Currency, CurrencyLibrary} from "@uniswap/v4-core/src/types/Currency.sol";
+import {BalanceDelta, BalanceDeltaLibrary} from "v4-core/src/types/BalanceDelta.sol";
+import {Currency, CurrencyLibrary} from "v4-core/src/types/Currency.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "v4-core/src/types/BeforeSwapDelta.sol";
 import {PoolId, PoolIdLibrary} from "v4-core/src/types/PoolId.sol";
 import {PoolKey} from "v4-core/src/types/PoolKey.sol";
@@ -18,6 +19,7 @@ contract BackGeoOracle is BaseHook {
     using Oracle for Oracle.Observation[65535];
     using PoolIdLibrary for PoolKey;
     using CurrencyLibrary for Currency;
+    using SafeCast for int256;
 
     using StateLibrary for IPoolManager;
 
@@ -121,8 +123,6 @@ contract BackGeoOracle is BaseHook {
         return (BackGeoOracle.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }
 
-    // same as before. Could allow call from manager or this address, provided all calls to
-    //  this address either come from manager of from this address, i.e. are restricted
     function afterSwap(
         address sender,
         PoolKey calldata key,
@@ -130,13 +130,14 @@ contract BackGeoOracle is BaseHook {
         BalanceDelta delta,
         bytes calldata
     ) external override onlyPoolManager returns (bytes4, int128) {
-        int128 feeAmount;
+        BalanceDelta hookDelta = BalanceDeltaLibrary.ZERO_DELTA;
 
+        // early escape to avoid calculating amounts twice if swap needs no backrun
         if (sender != address(this)) {
-            feeAmount = abi.decode(poolManager.unlock(abi.encode(key, params, delta)), (int128));
+            _backrun(key, params, delta);
         }
 
-        return (BackGeoOracle.afterSwap.selector, feeAmount); //feeAmount.toInt128()
+        return (BackGeoOracle.afterSwap.selector, BalanceDelta.unwrap(hookDelta).toInt128());
     }
 
     /// @notice Increase the cardinality target for the given pool
@@ -153,22 +154,13 @@ contract BackGeoOracle is BaseHook {
         state.cardinalityNext = cardinalityNextNew;
     }
 
-    struct CallbackData {
-        PoolKey key;
-        IPoolManager.SwapParams params;
-        BalanceDelta delta;
-    }
-
-    /// @notice prepares the hook for swap on the pool manager
-    /// @dev This call is only callable by this contract via poolManager.unlock
-    function _unlockCallback(bytes calldata rawData) internal override returns (bytes memory result) {
-        CallbackData memory data = abi.decode(rawData, (CallbackData));
-        PoolId poolId = data.key.toId();
+    function _backrun(PoolKey calldata key, IPoolManager.SwapParams memory params, BalanceDelta delta) private returns (bytes memory result) {
+        PoolId poolId = key.toId();
         (, int24 tick,,) = poolManager.getSlot0(poolId);
         bool shouldBackrun = true;
 
         // we only have 1 stored observation
-        Oracle.Observation memory last = observations[PoolId.wrap(keccak256(abi.encode(data.key)))][0];
+        Oracle.Observation memory last = observations[PoolId.wrap(keccak256(abi.encode(key)))][0];
         int128 tickDelta = int128(tick - last.prevTick);
 
         // we are only interested in the absolute tick delta
@@ -182,22 +174,20 @@ contract BackGeoOracle is BaseHook {
         } else if (tickDelta <= Oracle.TARGET_ABS_TICK_MOVE) {
             int128 numerator = (tickDelta - Oracle.MIN_ABS_TICK_MOVE) * 10000;
             int128 denominator = (Oracle.TARGET_ABS_TICK_MOVE - Oracle.MIN_ABS_TICK_MOVE) * 10000;
-            data.params.amountSpecified = data.params.amountSpecified * numerator / denominator;
+            params.amountSpecified = params.amountSpecified * numerator / denominator;
         } else if (tickDelta < Oracle.LIMIT_ABS_TICK_MOVE) {
             int128 numerator = (tickDelta - Oracle.TARGET_ABS_TICK_MOVE) * 10000 + 5000;
             int128 denominator = (Oracle.LIMIT_ABS_TICK_MOVE - Oracle.TARGET_ABS_TICK_MOVE) * 10000 * 2;
-            data.params.amountSpecified = data.params.amountSpecified * numerator / denominator;
+            params.amountSpecified = params.amountSpecified * numerator / denominator;
         } else {
             // Full backrun
         }
 
-        BalanceDelta delta;
-
         // early escape if no backrun is necessary, to save gas on small impact swaps
         if (shouldBackrun) {
-            data.params.zeroForOne = !data.params.zeroForOne;
-            data.params.sqrtPriceLimitX96 = data.params.zeroForOne ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1;
-            delta = poolManager.swap(data.key, data.params, "");
+            params.zeroForOne = !params.zeroForOne;
+            params.sqrtPriceLimitX96 = params.zeroForOne ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1;
+            delta = poolManager.swap(key, params, "");
         }
 
         return abi.encode(delta);
