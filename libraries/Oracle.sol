@@ -18,9 +18,7 @@ library Oracle {
     error TargetPredatesOldestObservation(uint32 oldestTimestamp, uint32 targetTimestamp);
 
     /// @notice This is the max amount of ticks in either direction that the pool is allowed without triggering a backrun
-    int128 constant MIN_ABS_TICK_MOVE = 410;
-    /// @notice This is the target amount of ticks in either direction for a 50% backrun
-    int128 constant TARGET_ABS_TICK_MOVE = 4558;
+    int128 constant MIN_ABS_TICK_MOVE = 912;
     /// @notice This is the min amount of ticks in either direction that triggers a full backrun
     int128 constant LIMIT_ABS_TICK_MOVE = 9116;
 

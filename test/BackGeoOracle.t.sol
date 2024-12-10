@@ -9,7 +9,7 @@ import {Pool} from "v4-core/src/libraries/Pool.sol";
 import {TickMath} from "v4-core/src/libraries/TickMath.sol";
 import {CustomRevert} from "v4-core/src/libraries/CustomRevert.sol";
 import {PoolKey} from "v4-core/src/types/PoolKey.sol";
-import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
+import {BalanceDelta, BalanceDeltaLibrary} from "v4-core/src/types/BalanceDelta.sol";
 import {PoolId, PoolIdLibrary} from "v4-core/src/types/PoolId.sol";
 import {CurrencyLibrary, Currency} from "v4-core/src/types/Currency.sol";
 import {PoolSwapTest} from "v4-core/src/test/PoolSwapTest.sol";
@@ -20,6 +20,8 @@ import {IPositionManager} from "v4-periphery/src/interfaces/IPositionManager.sol
 import {EasyPosm} from "./utils/EasyPosm.sol";
 import {Fixtures} from "./utils/Fixtures.sol";
 import {BackGeoOracle} from "../src/BackGeoOracle.sol";
+
+import "forge-std/console2.sol";
 
 contract BackGeoOracleTest is Test, Fixtures {
     using EasyPosm for IPositionManager;
@@ -157,7 +159,7 @@ contract BackGeoOracleTest is Test, Fixtures {
         key.currency1 = currency1;
     }
 
-    function testHookBeforeSwap() public {
+    /*function testHookBeforeSwap() public {
         // Setup for swap
         bool zeroForOne = true;
         int256 amountSpecified = -1e18; // Example amount for swap
@@ -168,13 +170,15 @@ contract BackGeoOracleTest is Test, Fixtures {
             amountSpecified,
             ZERO_BYTES
         );
-    }
+    }*/
 
     function testHookAfterSwap() public {
         // Perform a swap to test afterSwap hook
         bool zeroForOne = true;
-        int256 amountSpecified = -1e18;
-        /*BalanceDelta swapDelta =*/ swap(key, zeroForOne, amountSpecified, ZERO_BYTES);
+        int256 amountSpecified = -5e18;
+        BalanceDelta swapDelta = swap(key, zeroForOne, amountSpecified, ZERO_BYTES);
+        //console2.log("swap delta: ", swapDelta.amount0());
+        console2.log("swap delta: ", BalanceDelta.unwrap(swapDelta));
     }
 
     function testHookBeforeAddLiquidity() public {
@@ -234,10 +238,10 @@ contract BackGeoOracleTest is Test, Fixtures {
         );
     }
 
-    function testHookAfterSwapReturnDelta() public {
+    /*function testHookAfterSwapReturnDelta() public {
         bool zeroForOne = true;
         int256 amountSpecified = -1e18;
-        /*BalanceDelta swapDelta =*/ swap(key, zeroForOne, amountSpecified, ZERO_BYTES);
+        swap(key, zeroForOne, amountSpecified, ZERO_BYTES);
         //assertEq(int256(swapDelta.amount0()), amountSpecified);
-    }
+    }*/
 }

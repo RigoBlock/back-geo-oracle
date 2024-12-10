@@ -35,6 +35,10 @@ foundryup
 forge install
 forge test
 ```
+to output logs
+```
+forge test -vv
+```
 
 ### Local Development (Anvil)
 
