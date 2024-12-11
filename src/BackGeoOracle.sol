@@ -54,7 +54,7 @@ contract BackGeoOracle is BaseHook {
             afterInitialize: true,
             beforeAddLiquidity: true,
             afterAddLiquidity: false,
-            beforeRemoveLiquidity: false,
+            beforeRemoveLiquidity: true,
             afterRemoveLiquidity: false,
             beforeSwap: true,
             afterSwap: true,
@@ -111,6 +111,16 @@ contract BackGeoOracle is BaseHook {
         );
         _updatePool(key);
         return BackGeoOracle.beforeAddLiquidity.selector;
+    }
+
+    function beforeRemoveLiquidity(
+        address,
+        PoolKey calldata key,
+        IPoolManager.ModifyLiquidityParams calldata,
+        bytes calldata
+    ) external override onlyPoolManager returns (bytes4) {
+        _updatePool(key);
+        return BackGeoOracle.beforeRemoveLiquidity.selector;
     }
 
     function beforeSwap(address, PoolKey calldata key, IPoolManager.SwapParams calldata params, bytes calldata)

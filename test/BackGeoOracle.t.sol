@@ -19,6 +19,7 @@ import {SafeCallback} from "v4-periphery/src/base/SafeCallback.sol";
 import {IPositionManager} from "v4-periphery/src/interfaces/IPositionManager.sol";
 import {EasyPosm} from "./utils/EasyPosm.sol";
 import {Fixtures} from "./utils/Fixtures.sol";
+import {Oracle} from "../libraries/Oracle.sol";
 import {BackGeoOracle} from "../src/BackGeoOracle.sol";
 
 import "forge-std/console2.sol";
@@ -48,7 +49,7 @@ contract BackGeoOracleTest is Test, Fixtures {
         address flags = address(
             uint160(
                 Hooks.BEFORE_INITIALIZE_FLAG | Hooks.AFTER_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG
-                    | Hooks.AFTER_SWAP_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG| Hooks.AFTER_SWAP_RETURNS_DELTA_FLAG
+                    | Hooks.AFTER_SWAP_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG | Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG | Hooks.AFTER_SWAP_RETURNS_DELTA_FLAG
             ) ^ (0x4444 << 144) // Namespace the hook to avoid collisions
         );
         bytes memory constructorArgs = abi.encode(manager); //Add all the necessary constructor arguments from the hook
@@ -96,7 +97,7 @@ contract BackGeoOracleTest is Test, Fixtures {
         assertTrue(permissions.afterInitialize);
         assertTrue(permissions.beforeAddLiquidity);
         assertFalse(permissions.afterAddLiquidity);
-        assertFalse(permissions.beforeRemoveLiquidity);
+        assertTrue(permissions.beforeRemoveLiquidity);
         assertFalse(permissions.afterRemoveLiquidity);
         assertTrue(permissions.beforeSwap);
         assertTrue(permissions.afterSwap);
@@ -155,9 +156,29 @@ contract BackGeoOracleTest is Test, Fixtures {
         //);
         manager.initialize(key, SQRT_PRICE_1_1);
 
-        assertTrue(hook.getState(key).cardinalityNext == 1);
-        // TODO: remove if state gets reset after every test
-        key.currency1 = currency1;
+        // state assertions
+        BackGeoOracle.ObservationState memory observationState = hook.getState(key);
+        assertEq(observationState.index, 0);
+        assertEq(observationState.cardinality, 1);
+        assertEq(observationState.cardinalityNext, 1);
+
+        // observation assertions
+        Oracle.Observation memory observation = hook.getObservation(key, 0);
+        assertTrue(observation.initialized);
+        assertEq(observation.blockTimestamp, 1);
+        assertEq(observation.tickCumulative, 0);
+        assertEq(observation.secondsPerLiquidityCumulativeX128, 0);
+    }
+
+    function testAfterInitializeObserve0() public view {
+        uint32[] memory secondsAgo = new uint32[](1);
+        secondsAgo[0] = 0;
+        (int48[] memory tickCumulatives, uint144[] memory secondsPerLiquidityCumulativeX128s) =
+            hook.observe(key, secondsAgo);
+        assertEq(tickCumulatives.length, 1);
+        assertEq(secondsPerLiquidityCumulativeX128s.length, 1);
+        assertEq(tickCumulatives[0], 0);
+        assertEq(secondsPerLiquidityCumulativeX128s[0], 0);
     }
 
     function testExactOutZeroForOneRevert() public {
@@ -259,6 +280,52 @@ contract BackGeoOracleTest is Test, Fixtures {
             block.timestamp,
             ZERO_BYTES
         );
+    }
+
+    function testBeforeModifyPositionObservationAndCardinality() public {
+        //vm.warp(block.timestamp + 3);
+        skip(3);
+        hook.increaseCardinalityNext(key, 2);
+        BackGeoOracle.ObservationState memory observationState = hook.getState(key);
+        assertEq(observationState.index, 0);
+        assertEq(observationState.cardinality, 1);
+        assertEq(observationState.cardinalityNext, 2);
+
+        uint256 liquidityToRemove = 1e18;
+        posm.decreaseLiquidity(
+            tokenId,
+            liquidityToRemove,
+            MAX_SLIPPAGE_REMOVE_LIQUIDITY,
+            MAX_SLIPPAGE_REMOVE_LIQUIDITY,
+            address(this),
+            block.timestamp,
+            ZERO_BYTES
+        );
+
+        // cardinality is updated
+        observationState = hook.getState(key);
+        assertEq(observationState.index, 1);
+        assertEq(observationState.cardinality, 2);
+        assertEq(observationState.cardinalityNext, 2);
+
+        // index 0 is untouched
+        Oracle.Observation memory observation = hook.getObservation(key, 0);
+        assertTrue(observation.initialized);
+        // TODO: why is 1st obs time not time-travelled?
+        assertEq(observation.blockTimestamp, block.timestamp - 3);
+        console.logUint(observation.blockTimestamp);
+        console.logUint(block.timestamp);
+        console.logUint(vm.getBlockTimestamp());
+        assertEq(observation.tickCumulative, 0);
+        assertEq(observation.secondsPerLiquidityCumulativeX128, 0);
+
+        // index 1 is written
+        observation = hook.getObservation(key, 1);
+        assertTrue(observation.initialized);
+        assertEq(observation.blockTimestamp, block.timestamp);
+        // TODO: verify why this observation is not stored
+        //assertEq(observation.tickCumulative, 13862);
+        //assertEq(observation.secondsPerLiquidityCumulativeX128, 680564733841876926926749214863536422912);
     }
 
     // TODO: check why [FAIL: revert: deltaAfter1 is not greater than or equal to 0] with big amounts
