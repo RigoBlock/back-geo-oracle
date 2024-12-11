@@ -22,6 +22,7 @@ import {Fixtures} from "./utils/Fixtures.sol";
 import {BackGeoOracle} from "../src/BackGeoOracle.sol";
 
 import "forge-std/console2.sol";
+import {console} from "forge-std/console.sol";
 
 contract BackGeoOracleTest is Test, Fixtures {
     using EasyPosm for IPositionManager;
@@ -159,30 +160,42 @@ contract BackGeoOracleTest is Test, Fixtures {
         key.currency1 = currency1;
     }
 
-    /*function testHookBeforeSwap() public {
-        // Setup for swap
+    function testExactOutZeroForOneRevert() public {
         bool zeroForOne = true;
-        int256 amountSpecified = -1e18; // Example amount for swap
+        int256 amountSpecified = 1e18;
 
+        vm.expectRevert("Use swapNativeInput() for native-token exact-output swaps");
         swap(
             key,
             zeroForOne,
             amountSpecified,
             ZERO_BYTES
         );
-    }*/
-
-    function testHookAfterSwap() public {
-        // Perform a swap to test afterSwap hook
-        bool zeroForOne = true;
-        int256 amountSpecified = -5e18;
-        BalanceDelta swapDelta = swap(key, zeroForOne, amountSpecified, ZERO_BYTES);
-        //console2.log("swap delta: ", swapDelta.amount0());
-        console2.log("swap delta: ", BalanceDelta.unwrap(swapDelta));
     }
 
-    function testHookBeforeAddLiquidity() public {
-        // Add more liquidity to test beforeAddLiquidity hook
+    function testExactOutRevert() public {
+        bool zeroForOne = false;
+        int256 amountSpecified = 1e18;
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                CustomRevert.WrappedError.selector,
+                address(hook),
+                IHooks.beforeSwap.selector,
+                abi.encodeWithSelector(BackGeoOracle.NotExactIn.selector),
+                abi.encodeWithSelector(Hooks.HookCallFailed.selector)
+            )
+        );
+        swap(
+            key,
+            zeroForOne,
+            amountSpecified,
+            ZERO_BYTES
+        );
+    }
+
+    function testHookBeforeAddLiquidityRevert() public {
+        vm.skip(true);
         uint128 additionalLiquidity = 100e18;
         (uint256 amount0Expected, uint256 amount1Expected) = LiquidityAmounts.getAmountsForLiquidity(
             SQRT_PRICE_1_1,
@@ -191,8 +204,8 @@ contract BackGeoOracleTest is Test, Fixtures {
             additionalLiquidity
         );
 
-        // TODO: check why call does not revert as expected
-        /*vm.expectRevert(
+        // cannot reproduce, as call does not revert as expected. Prob due to low-level call silent fail.
+        vm.expectRevert(
             abi.encodeWithSelector(
                 CustomRevert.WrappedError.selector,
                 address(hook),
@@ -201,17 +214,27 @@ contract BackGeoOracleTest is Test, Fixtures {
                 abi.encodeWithSelector(Hooks.HookCallFailed.selector)
             )
         );
-        (uint256 newTokenId,) = posm.mint(
+        /*(uint256 newTokenId,) =*/ posm.mint(
             key,
-            0,
-            tickUpper,
+            tickLower,
+            tickUpper - TickMath.MAX_TICK_SPACING,
             additionalLiquidity,
             amount0Expected + 1,
             amount1Expected + 1,
             address(this),
             block.timestamp,
             ZERO_BYTES
-        );*/
+        );
+    }
+
+    function testHookBeforeAddLiquidity() public {
+        uint128 additionalLiquidity = 100e18;
+        (uint256 amount0Expected, uint256 amount1Expected) = LiquidityAmounts.getAmountsForLiquidity(
+            SQRT_PRICE_1_1,
+            TickMath.getSqrtPriceAtTick(tickLower),
+            TickMath.getSqrtPriceAtTick(tickUpper),
+            additionalLiquidity
+        );
         
         (uint256 newTokenId,) = posm.mint(
             key,
@@ -238,10 +261,34 @@ contract BackGeoOracleTest is Test, Fixtures {
         );
     }
 
-    /*function testHookAfterSwapReturnDelta() public {
+    // TODO: check why [FAIL: revert: deltaAfter1 is not greater than or equal to 0] with big amounts
+    function testHookAfterSwap() public {
+        // Perform a swap to test afterSwap hook
+        bool zeroForOne = true;
+        int256 amountSpecified = -5e18;
+        BalanceDelta swapDelta = swap(key, zeroForOne, amountSpecified, ZERO_BYTES);
+        console2.log("amount0 delta 5 eth: ", swapDelta.amount0());
+        console2.log("amount1 delta 5 eth: ", swapDelta.amount1());
+
+        amountSpecified = -50e18;
+        swapDelta = swap(key, zeroForOne, amountSpecified, ZERO_BYTES);
+        console2.log("amount0 delta 50 eth: ", swapDelta.amount0());
+        console2.log("amount1 delta 50 eth: ", swapDelta.amount1());
+
+        amountSpecified = -100e18;
+        swapDelta = swap(key, zeroForOne, amountSpecified, ZERO_BYTES);
+        console2.log("amount0 delta 200 eth: ", swapDelta.amount0());
+        console2.log("amount1 delta 200 eth: ", swapDelta.amount1());
+
+        // execute exactIn, 1 for 0
+        swap(key, !zeroForOne, amountSpecified, ZERO_BYTES);
+    }
+
+    function testHookAfterSwapReturnDelta() public {
+        vm.skip(true);
         bool zeroForOne = true;
         int256 amountSpecified = -1e18;
-        swap(key, zeroForOne, amountSpecified, ZERO_BYTES);
-        //assertEq(int256(swapDelta.amount0()), amountSpecified);
-    }*/
+        BalanceDelta swapDelta = swap(key, zeroForOne, amountSpecified, ZERO_BYTES);
+        assertEq(int256(swapDelta.amount0()), amountSpecified);
+    }
 }

@@ -15,8 +15,6 @@ import {PoolId, PoolIdLibrary} from "v4-core/src/types/PoolId.sol";
 import {PoolKey} from "v4-core/src/types/PoolKey.sol";
 import {Oracle} from "../libraries/Oracle.sol";
 
-import "forge-std/console2.sol";
-
 contract BackGeoOracle is BaseHook {
     using Oracle for Oracle.Observation[65535];
     using PoolIdLibrary for PoolKey;
@@ -33,9 +31,6 @@ contract BackGeoOracle is BaseHook {
 
     /// @notice Only exactInput swap types are allowed
     error NotExactIn();
-
-    /// @notice Emitted in the case a backrun swap is triggered and executed
-    event Backrun(address sender, int128 amount0, int128 amount1);
 
     /// @member index The index of the last written observation for the pool
     /// @member cardinality The cardinality of the observations array for the pool
@@ -84,8 +79,6 @@ contract BackGeoOracle is BaseHook {
         // there may only be one pool per pair of tokens that use this hook. The tick spacing is set to the maximum
         // because we only allow max range liquidity in this pool. The currency0 must be base currency to prevent
         // rogue oracles.
-        // TODO: we require a reliable generalized oracle, but could allow creation of any oracle, say for example
-        //  someone wants to create an oracle for ENS-USDT, does not need to query ENS-0 and 0-USDT. Remove additional condition.
         require(
             key.fee == 0 && key.tickSpacing == TickMath.MAX_TICK_SPACING && key.currency0.isAddressZero(),
             OnlyOneOraclePoolAllowed()
@@ -126,12 +119,9 @@ contract BackGeoOracle is BaseHook {
         onlyPoolManager
         returns (bytes4, BeforeSwapDelta, uint24)
     {
-        _updatePool(key);
-
         // only exactIn swaps are supported
-        // TODO: check if makes sense to still update but charge full amount as fee and mint back to user
         require(params.amountSpecified < 0, NotExactIn());
-
+        _updatePool(key);
         return (BackGeoOracle.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }
 
@@ -180,7 +170,7 @@ contract BackGeoOracle is BaseHook {
         state.cardinalityNext = cardinalityNextNew;
     }
 
-    function _backrun(address sender, PoolKey calldata key, IPoolManager.SwapParams memory params)
+    function _backrun(address, PoolKey calldata key, IPoolManager.SwapParams memory params)
         private
         returns (BalanceDelta hookDelta, bool shouldBackrun)
     {
@@ -196,20 +186,18 @@ contract BackGeoOracle is BaseHook {
             tickDelta = -tickDelta;
         }
 
-        console2.log("amountSpecified: ", params.amountSpecified);
-        console2.log("zeroForOne: ", params.zeroForOne);
-        console2.log("sqrtPriceLimitX96: ", params.sqrtPriceLimitX96);
-
+        // we apply a 1 bps tolerance for rounding errors that prevent full amount backrun
         if (tickDelta <= Oracle.MIN_ABS_TICK_MOVE) {
             // early escape to save gas for normal transactions
         } else if (tickDelta < Oracle.LIMIT_ABS_TICK_MOVE) {
             shouldBackrun = true;
-            int128 numerator = tickDelta * 10000;
-            int128 denominator = (Oracle.LIMIT_ABS_TICK_MOVE - Oracle.MIN_ABS_TICK_MOVE) * 10000;
+            int128 numerator = tickDelta * 9999;
+            int128 denominator = Oracle.LIMIT_ABS_TICK_MOVE * 10000;
             params.amountSpecified = params.amountSpecified * numerator / denominator;
         } else {
             // Full backrun
             shouldBackrun = true;
+            params.amountSpecified = params.amountSpecified * 9999 / 10000;
         }
 
         // early escape if no backrun is necessary, to save gas on small impact swaps
@@ -218,16 +206,8 @@ contract BackGeoOracle is BaseHook {
             params.amountSpecified = -params.amountSpecified;
             params.sqrtPriceLimitX96 = params.zeroForOne ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1;
 
-            console2.log("amountSpecified: ", params.amountSpecified);
-            console2.log("zeroForOne: ", params.zeroForOne);
-            console2.log("sqrtPriceLimitX96: ", params.sqrtPriceLimitX96);
-
             // transfer deltas to user
             hookDelta = poolManager.swap(key, params, "");
-            console2.log("tickDelta: ", tickDelta);
-            console2.log("shouldBackrun: ", shouldBackrun);
-
-            emit Backrun(sender, hookDelta.amount0(), hookDelta.amount1());
         } else {
             hookDelta = BalanceDeltaLibrary.ZERO_DELTA;
         }
