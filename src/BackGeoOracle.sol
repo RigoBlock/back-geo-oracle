@@ -69,7 +69,6 @@ contract BackGeoOracle is BaseHook {
 
     function beforeInitialize(address, PoolKey calldata key, uint160)
         external
-        // TODO: verify if ok overriding virtual with view
         view
         override
         onlyPoolManager
@@ -77,12 +76,8 @@ contract BackGeoOracle is BaseHook {
     {
         // This is to limit the fragmentation of pools using this oracle hook. In other words,
         // there may only be one pool per pair of tokens that use this hook. The tick spacing is set to the maximum
-        // because we only allow max range liquidity in this pool. The currency0 must be base currency to prevent
-        // rogue oracles.
-        require(
-            key.fee == 0 && key.tickSpacing == TickMath.MAX_TICK_SPACING && key.currency0.isAddressZero(),
-            OnlyOneOraclePoolAllowed()
-        );
+        // because we only allow max range liquidity in this pool.
+        require(key.fee == 0 && key.tickSpacing == TickMath.MAX_TICK_SPACING, OnlyOneOraclePoolAllowed());
         return BackGeoOracle.beforeInitialize.selector;
     }
 
