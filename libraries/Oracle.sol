@@ -18,9 +18,9 @@ library Oracle {
     error TargetPredatesOldestObservation(uint32 oldestTimestamp, uint32 targetTimestamp);
 
     /// @notice This is the max amount of ticks in either direction that the pool is allowed without triggering a backrun
-    int128 constant MIN_ABS_TICK_MOVE = 912;
+    int24 constant MIN_ABS_TICK_MOVE = 912;
     /// @notice This is the min amount of ticks in either direction that triggers a full backrun
-    int128 constant LIMIT_ABS_TICK_MOVE = 9116;
+    int24 constant LIMIT_ABS_TICK_MOVE = 9116;
 
     /// @dev slot dimensions has been modified to add an int24 prevTick
     struct Observation {

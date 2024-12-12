@@ -189,7 +189,7 @@ contract BackGeoOracle is BaseHook {
 
         // we only have 1 stored observation
         Oracle.Observation memory last = observations[PoolId.wrap(keccak256(abi.encode(key)))][0];
-        int128 tickDelta = int128(tick - last.prevTick);
+        int24 tickDelta = tick - last.prevTick;
 
         // we are only interested in the absolute tick delta
         if (tickDelta < 0) {
@@ -201,8 +201,8 @@ contract BackGeoOracle is BaseHook {
             // early escape to save gas for normal transactions
         } else if (tickDelta < Oracle.LIMIT_ABS_TICK_MOVE) {
             shouldBackrun = true;
-            int128 numerator = tickDelta * 9999;
-            int128 denominator = Oracle.LIMIT_ABS_TICK_MOVE * 10000;
+            int128 numerator = int128(tickDelta) * 9999;
+            int128 denominator = int128(Oracle.LIMIT_ABS_TICK_MOVE) * 10000;
             params.amountSpecified = params.amountSpecified * numerator / denominator;
         } else {
             // Full backrun
