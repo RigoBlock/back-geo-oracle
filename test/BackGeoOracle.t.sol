@@ -59,7 +59,7 @@ contract BackGeoOracleTest is Test, Fixtures {
         // Create the pool
         key = PoolKey(Currency.wrap(address(0)), currency1, 0, TickMath.MAX_TICK_SPACING, IHooks(hook)); //currency0
         poolId = key.toId();
-        manager.initialize(key, SQRT_PRICE_1_1);
+        manager.initialize(key, SQRT_PRICE_2_1);
 
         // Provide full-range liquidity to the pool
         tickLower = TickMath.minUsableTick(key.tickSpacing);
@@ -68,7 +68,7 @@ contract BackGeoOracleTest is Test, Fixtures {
         uint128 liquidityAmount = 100e18;
 
         (uint256 amount0Expected, uint256 amount1Expected) = LiquidityAmounts.getAmountsForLiquidity(
-            SQRT_PRICE_1_1,
+            SQRT_PRICE_2_1,
             TickMath.getSqrtPriceAtTick(tickLower),
             TickMath.getSqrtPriceAtTick(tickUpper),
             liquidityAmount
@@ -111,14 +111,16 @@ contract BackGeoOracleTest is Test, Fixtures {
 
     function testHookBeforeInitialize() public {
         vm.expectRevert(SafeCallback.NotPoolManager.selector);
-        hook.beforeInitialize(address(this), key, SQRT_PRICE_1_1);
+        hook.beforeInitialize(address(this), key, SQRT_PRICE_2_1);
 
         // cannot initialize already-initialized pool
         vm.expectRevert(Pool.PoolAlreadyInitialized.selector);
-        manager.initialize(key, SQRT_PRICE_1_1);
+        manager.initialize(key, SQRT_PRICE_2_1);
+
+        PoolKey memory newKey = key;
 
         // cannot have fee other than 0
-        key.fee = 1; // Change one parameter to make it different from the existing pool
+        newKey.fee = 1; // Change one parameter to make it different from the existing pool
         vm.expectRevert(
             abi.encodeWithSelector(
                 CustomRevert.WrappedError.selector,
@@ -128,42 +130,41 @@ contract BackGeoOracleTest is Test, Fixtures {
                 abi.encodeWithSelector(Hooks.HookCallFailed.selector)
             )
         );
-        manager.initialize(key, SQRT_PRICE_1_1);
+        manager.initialize(newKey, SQRT_PRICE_2_1);
 
         // an EOA can be token1
         // TODO: assert that liquidity cannot be added to pool where token1 is EOA, i.e. liquidity will be 0
-        key.fee = 0;
-        key.currency1 = Currency.wrap(address(2));
-        // tick is stored in observation, but there is not check on the tick value, as it is retrieved from poolManager
+        newKey.fee = 0;
+        newKey.currency1 = Currency.wrap(address(2));
         int24 tick = 0;
-        vm.expectCall(address(hook), abi.encodeCall(hook.afterInitialize, (address(this), key, SQRT_PRICE_1_1, tick)));
-        manager.initialize(key, SQRT_PRICE_1_1);
-        key.currency1 = currency1;
+        vm.expectCall(address(hook), abi.encodeCall(hook.afterInitialize, (address(this), newKey, SQRT_PRICE_1_1, tick)));
+        manager.initialize(newKey, SQRT_PRICE_1_1);
     }
 
     function testHookAfterInitialize() public {
-        key.currency1 = Currency.wrap(address(0x123)); // Example new address for currency1
+        PoolKey memory newKey = key;
+        newKey.currency1 = Currency.wrap(address(0x123)); // Example new address for currency1
         //vm.expectEmit(true, true, true, true);
         //emit Initialize(
-        //    key.toId(), 
-        //    key.currency0, 
-        //    key.currency1, 
-        //    key.fee, 
-        //    key.tickSpacing, 
-        //    key.hooks, 
+        //    newKey.toId(), 
+        //    newKey.currency0, 
+        //    newKey.currency1, 
+        //    newKey.fee, 
+        //    newKey.tickSpacing, 
+        //    newKey.hooks, 
         //    SQRT_PRICE_1_1, 
         //    TickMath.getTickAtSqrtPrice(SQRT_PRICE_1_1)
         //);
-        manager.initialize(key, SQRT_PRICE_1_1);
+        manager.initialize(newKey, SQRT_PRICE_1_1);
 
         // state assertions
-        BackGeoOracle.ObservationState memory observationState = hook.getState(key);
+        BackGeoOracle.ObservationState memory observationState = hook.getState(newKey);
         assertEq(observationState.index, 0);
         assertEq(observationState.cardinality, 1);
         assertEq(observationState.cardinalityNext, 1);
 
         // observation assertions
-        Oracle.Observation memory observation = hook.getObservation(key, 0);
+        Oracle.Observation memory observation = hook.getObservation(newKey, 0);
         assertTrue(observation.initialized);
         assertEq(observation.blockTimestamp, 1);
         assertEq(observation.tickCumulative, 0);
@@ -219,7 +220,7 @@ contract BackGeoOracleTest is Test, Fixtures {
         vm.skip(true);
         uint128 additionalLiquidity = 100e18;
         (uint256 amount0Expected, uint256 amount1Expected) = LiquidityAmounts.getAmountsForLiquidity(
-            SQRT_PRICE_1_1,
+            SQRT_PRICE_2_1,
             TickMath.getSqrtPriceAtTick(tickLower),
             TickMath.getSqrtPriceAtTick(tickUpper),
             additionalLiquidity
@@ -251,7 +252,7 @@ contract BackGeoOracleTest is Test, Fixtures {
     function testHookBeforeAddLiquidity() public {
         uint128 additionalLiquidity = 100e18;
         (uint256 amount0Expected, uint256 amount1Expected) = LiquidityAmounts.getAmountsForLiquidity(
-            SQRT_PRICE_1_1,
+            SQRT_PRICE_2_1,
             TickMath.getSqrtPriceAtTick(tickLower),
             TickMath.getSqrtPriceAtTick(tickUpper),
             additionalLiquidity
@@ -283,13 +284,15 @@ contract BackGeoOracleTest is Test, Fixtures {
     }
 
     function testBeforeModifyPositionObservationAndCardinality() public {
-        //vm.warp(block.timestamp + 3);
-        skip(3);
+        vm.warp(vm.getBlockTimestamp() + 2);
         hook.increaseCardinalityNext(key, 2);
         BackGeoOracle.ObservationState memory observationState = hook.getState(key);
         assertEq(observationState.index, 0);
         assertEq(observationState.cardinality, 1);
         assertEq(observationState.cardinalityNext, 2);
+        (, int24 tick,,) = manager.getSlot0(poolId);
+        // when sqrtPriceLimitX96 = 2^96, tick is 0 (log1.0001(price))
+        assertEq(uint256(int256(tick)), 6931);
 
         uint256 liquidityToRemove = 1e18;
         posm.decreaseLiquidity(
@@ -298,7 +301,7 @@ contract BackGeoOracleTest is Test, Fixtures {
             MAX_SLIPPAGE_REMOVE_LIQUIDITY,
             MAX_SLIPPAGE_REMOVE_LIQUIDITY,
             address(this),
-            block.timestamp,
+            vm.getBlockTimestamp(),
             ZERO_BYTES
         );
 
@@ -311,41 +314,63 @@ contract BackGeoOracleTest is Test, Fixtures {
         // index 0 is untouched
         Oracle.Observation memory observation = hook.getObservation(key, 0);
         assertTrue(observation.initialized);
-        // TODO: why is 1st obs time not time-travelled?
-        assertEq(observation.blockTimestamp, block.timestamp - 3);
-        console.logUint(observation.blockTimestamp);
-        console.logUint(block.timestamp);
-        console.logUint(vm.getBlockTimestamp());
+        assertEq(observation.blockTimestamp, 1);
         assertEq(observation.tickCumulative, 0);
         assertEq(observation.secondsPerLiquidityCumulativeX128, 0);
+        assertEq(observation.prevTick, 6931);
 
         // index 1 is written
         observation = hook.getObservation(key, 1);
         assertTrue(observation.initialized);
-        assertEq(observation.blockTimestamp, block.timestamp);
-        // TODO: verify why this observation is not stored
-        //assertEq(observation.tickCumulative, 13862);
-        //assertEq(observation.secondsPerLiquidityCumulativeX128, 680564733841876926926749214863536422912);
+        // timestamp of observation is the one of the block it is recorded in
+        assertEq(observation.blockTimestamp, 3);
+        assertEq(observation.tickCumulative, 13862);
+        assertEq(observation.secondsPerLiquidityCumulativeX128, 6805647338418769269);
+        assertEq(observation.prevTick, 6931);
+
+        vm.warp(vm.getBlockTimestamp() + 1);
+        hook.increaseCardinalityNext(key, 3);
+        bool zeroForOne = true;
+        int256 amountSpecified = -1e18;
+        swap(key, zeroForOne, amountSpecified, ZERO_BYTES);
+        observation = hook.getObservation(key, 2);
+        assertTrue(observation.initialized);
+        assertEq(observation.secondsPerLiquidityCumulativeX128, 10242842963882794152);
+        assertEq(observation.tickCumulative, 20793);
+        assertEq(observation.prevTick, 6931);
+        (, tick,,) = manager.getSlot0(poolId);
+        assertEq(int256(tick), 6648);
+
+        vm.warp(vm.getBlockTimestamp() + 1);
+        swap(key, zeroForOne, amountSpecified, ZERO_BYTES);
+        // we do not increase cardinality, so observation will be overwritten to oldest
+        observation = hook.getObservation(key, 0);
+        assertTrue(observation.initialized);
+        assertEq(observation.secondsPerLiquidityCumulativeX128, 13680038589346819035);
+        assertEq(observation.tickCumulative, 27441);
+        assertEq(int256(observation.prevTick), 6648);
+        assertEq(observation.blockTimestamp, 5);
+        (, tick,,) = manager.getSlot0(poolId);
+        assertEq(int256(tick), 6368);
     }
 
-    // TODO: check why [FAIL: revert: deltaAfter1 is not greater than or equal to 0] with big amounts
     function testHookAfterSwap() public {
         // Perform a swap to test afterSwap hook
         bool zeroForOne = true;
         int256 amountSpecified = -5e18;
         BalanceDelta swapDelta = swap(key, zeroForOne, amountSpecified, ZERO_BYTES);
-        console2.log("amount0 delta 5 eth: ", swapDelta.amount0());
-        console2.log("amount1 delta 5 eth: ", swapDelta.amount1());
+        console2.log("amount0 delta 5 eth: %d", swapDelta.amount0());
+        console2.log("amount1 delta 5 eth: %d", swapDelta.amount1());
 
         amountSpecified = -50e18;
         swapDelta = swap(key, zeroForOne, amountSpecified, ZERO_BYTES);
-        console2.log("amount0 delta 50 eth: ", swapDelta.amount0());
-        console2.log("amount1 delta 50 eth: ", swapDelta.amount1());
+        console2.log("amount0 delta 50 eth: %d", swapDelta.amount0());
+        console2.log("amount1 delta 50 eth: %d", swapDelta.amount1());
 
         amountSpecified = -100e18;
         swapDelta = swap(key, zeroForOne, amountSpecified, ZERO_BYTES);
-        console2.log("amount0 delta 200 eth: ", swapDelta.amount0());
-        console2.log("amount1 delta 200 eth: ", swapDelta.amount1());
+        console2.log("amount0 delta 200 eth: %d", swapDelta.amount0());
+        console2.log("amount1 delta 200 eth: %d", swapDelta.amount1());
 
         // execute exactIn, 1 for 0
         swap(key, !zeroForOne, amountSpecified, ZERO_BYTES);
