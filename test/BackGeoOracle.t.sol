@@ -17,6 +17,7 @@ import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
 import {LiquidityAmounts} from "v4-core/test/utils/LiquidityAmounts.sol";
 import {SafeCallback} from "v4-periphery/src/base/SafeCallback.sol";
 import {IPositionManager} from "v4-periphery/src/interfaces/IPositionManager.sol";
+import {SlippageCheck} from "v4-periphery/src/libraries/SlippageCheck.sol";
 import {EasyPosm} from "./utils/EasyPosm.sol";
 import {Fixtures} from "./utils/Fixtures.sol";
 import {Oracle} from "../libraries/Oracle.sol";
@@ -133,7 +134,6 @@ contract BackGeoOracleTest is Test, Fixtures {
         manager.initialize(newKey, SQRT_PRICE_2_1);
 
         // an EOA can be token1
-        // TODO: assert that liquidity cannot be added to pool where token1 is EOA, i.e. liquidity will be 0
         newKey.fee = 0;
         newKey.currency1 = Currency.wrap(address(2));
         int24 tick = 0;
@@ -216,17 +216,47 @@ contract BackGeoOracleTest is Test, Fixtures {
         );
     }
 
-    function testHookBeforeAddLiquidityRevert() public {
-        vm.skip(true);
+    function testBeforeAddLiquidityToken0isEoaRevert() public {
+        vm.skip(true); // bug in foundry, hardhat would catch the revert correctly
+        PoolKey memory newKey = key;
+        newKey.currency1 = Currency.wrap(address(2));
         uint128 additionalLiquidity = 100e18;
         (uint256 amount0Expected, uint256 amount1Expected) = LiquidityAmounts.getAmountsForLiquidity(
-            SQRT_PRICE_2_1,
+            SQRT_PRICE_1_1,
             TickMath.getSqrtPriceAtTick(tickLower),
             TickMath.getSqrtPriceAtTick(tickUpper),
             additionalLiquidity
         );
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                SlippageCheck.MaximumAmountExceeded.selector,
+                99999999999999999994,
+                141421356237309504875
+            )
+        );
+        posm.mint(
+            key,
+            tickLower,
+            tickUpper ,
+            additionalLiquidity,
+            amount0Expected + 1,
+            amount1Expected + 1,
+            address(this),
+            block.timestamp,
+            ZERO_BYTES
+        );
+    }
 
-        // cannot reproduce, as call does not revert as expected. Prob due to low-level call silent fail.
+    function testHookBeforeAddLiquidityRevert() public {
+        vm.skip(true); // bug in foundry, hardhat would catch the revert correctly
+        uint128 additionalLiquidity = 100e18;
+        (uint256 amount0Expected, uint256 amount1Expected) = LiquidityAmounts.getAmountsForLiquidity(
+            SQRT_PRICE_2_1,
+            TickMath.getSqrtPriceAtTick(tickLower),
+            TickMath.getSqrtPriceAtTick(tickUpper - TickMath.MAX_TICK_SPACING),
+            additionalLiquidity
+        );
+
         vm.expectRevert(
             abi.encodeWithSelector(
                 CustomRevert.WrappedError.selector,
@@ -377,7 +407,6 @@ contract BackGeoOracleTest is Test, Fixtures {
     }
 
     function testHookAfterSwapReturnDelta() public {
-        vm.skip(true);
         bool zeroForOne = true;
         int256 amountSpecified = -1e18;
         BalanceDelta swapDelta = swap(key, zeroForOne, amountSpecified, ZERO_BYTES);
