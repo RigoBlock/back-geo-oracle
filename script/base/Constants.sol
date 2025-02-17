@@ -13,10 +13,10 @@ contract Constants {
     PositionManager constant posm = PositionManager(payable(address(0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0)));
     IAllowanceTransfer constant PERMIT2 = IAllowanceTransfer(address(0x000000000022D473030F116dDEE9F6B43aC78BA3));
 
-    address private immutable poolManager;
-    IPoolManager immutable POOLMANAGER = IPoolManager(address(poolManager));
+    IPoolManager immutable POOLMANAGER;
 
     constructor() {
+        address poolManager;
         uint256 chainId = block.chainid;
         if (chainId == 1) {
             poolManager = 0x000000000004444c5dc75cB358380D2e3dE08A90;
@@ -49,5 +49,6 @@ contract Constants {
         } else {
             poolManager = 0x5FbDB2315678afecb367f032d93F642f64180aa3;
         }
+        POOLMANAGER = IPoolManager(address(poolManager));
     }
 }
