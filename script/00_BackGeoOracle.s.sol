@@ -7,7 +7,7 @@ import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
 
 import {Constants} from "./base/Constants.sol";
 import {BackGeoOracle} from "../src/BackGeoOracle.sol";
-import {HookMiner} from "../test/utils/HookMiner.sol";
+import {HookMiner} from "v4-periphery/src/utils/HookMiner.sol";
 
 /// @notice Mines the address and deploys the BackGeoOracle.sol Hook contract
 contract BackGeoOracleScript is Script, Constants {
