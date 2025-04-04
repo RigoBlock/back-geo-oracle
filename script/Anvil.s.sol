@@ -66,7 +66,7 @@ contract BackGeoOracleScript is Script, DeployPermit2 {
 
         // test the lifecycle (create pool, add liquidity, swap)
         vm.startBroadcast();
-        testLifecycle(manager, address(oracle), posm, lpRouter, swapRouter);
+        testLifecycle(address(oracle));
         vm.stopBroadcast();
     }
 

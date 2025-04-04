@@ -15,7 +15,7 @@ import {CurrencyLibrary, Currency} from "v4-core/src/types/Currency.sol";
 import {PoolSwapTest} from "v4-core/src/test/PoolSwapTest.sol";
 import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
 import {LiquidityAmounts} from "v4-core/test/utils/LiquidityAmounts.sol";
-import {SafeCallback} from "v4-periphery/src/base/SafeCallback.sol";
+import {ImmutableState} from "v4-periphery/src/base/ImmutableState.sol";
 import {IPositionManager} from "v4-periphery/src/interfaces/IPositionManager.sol";
 import {SlippageCheck} from "v4-periphery/src/libraries/SlippageCheck.sol";
 import {EasyPosm} from "./utils/EasyPosm.sol";
@@ -111,7 +111,7 @@ contract BackGeoOracleTest is Test, Fixtures {
     }
 
     function testHookBeforeInitialize() public {
-        vm.expectRevert(SafeCallback.NotPoolManager.selector);
+        vm.expectRevert(ImmutableState.NotPoolManager.selector);
         hook.beforeInitialize(address(this), key, SQRT_PRICE_2_1);
 
         // cannot initialize already-initialized pool

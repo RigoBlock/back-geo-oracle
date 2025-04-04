@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {BaseHook} from "v4-periphery/src/base/hooks/BaseHook.sol";
+import {BaseHook} from "v4-periphery/src/utils/BaseHook.sol";
 
 import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
 import {Hooks} from "v4-core/src/libraries/Hooks.sol";
@@ -67,8 +67,8 @@ contract BackGeoOracle is BaseHook {
         });
     }
 
-    function beforeInitialize(address, PoolKey calldata key, uint160)
-        external
+    function _beforeInitialize(address, PoolKey calldata key, uint160)
+        internal
         view
         override
         onlyPoolManager
@@ -78,26 +78,26 @@ contract BackGeoOracle is BaseHook {
         // there may only be one pool per pair of tokens that use this hook. The tick spacing is set to the maximum
         // because we only allow max range liquidity in this pool.
         require(key.fee == 0 && key.tickSpacing == TickMath.MAX_TICK_SPACING, OnlyOneOraclePoolAllowed());
-        return BackGeoOracle.beforeInitialize.selector;
+        return BaseHook.beforeInitialize.selector;
     }
 
-    function afterInitialize(address, PoolKey calldata key, uint160, int24 tick)
-        external
+    function _afterInitialize(address, PoolKey calldata key, uint160, int24 tick)
+        internal
         override
         onlyPoolManager
         returns (bytes4)
     {
         PoolId id = key.toId();
         (states[id].cardinality, states[id].cardinalityNext) = observations[id].initialize(_blockTimestamp(), tick);
-        return BackGeoOracle.afterInitialize.selector;
+        return BaseHook.afterInitialize.selector;
     }
 
-    function beforeAddLiquidity(
+    function _beforeAddLiquidity(
         address,
         PoolKey calldata key,
         IPoolManager.ModifyLiquidityParams calldata params,
         bytes calldata
-    ) external override onlyPoolManager returns (bytes4) {
+    ) internal override onlyPoolManager returns (bytes4) {
         int24 maxTickSpacing = TickMath.MAX_TICK_SPACING;
         require(
             params.tickLower == TickMath.minUsableTick(maxTickSpacing)
@@ -105,21 +105,21 @@ contract BackGeoOracle is BaseHook {
             OraclePositionsMustBeFullRange()
         );
         _updatePool(key);
-        return BackGeoOracle.beforeAddLiquidity.selector;
+        return BaseHook.beforeAddLiquidity.selector;
     }
 
-    function beforeRemoveLiquidity(
+    function _beforeRemoveLiquidity(
         address,
         PoolKey calldata key,
         IPoolManager.ModifyLiquidityParams calldata,
         bytes calldata
-    ) external override onlyPoolManager returns (bytes4) {
+    ) internal override onlyPoolManager returns (bytes4) {
         _updatePool(key);
-        return BackGeoOracle.beforeRemoveLiquidity.selector;
+        return BaseHook.beforeRemoveLiquidity.selector;
     }
 
-    function beforeSwap(address, PoolKey calldata key, IPoolManager.SwapParams calldata params, bytes calldata)
-        external
+    function _beforeSwap(address, PoolKey calldata key, IPoolManager.SwapParams calldata params, bytes calldata)
+        internal
         override
         onlyPoolManager
         returns (bytes4, BeforeSwapDelta, uint24)
@@ -127,16 +127,16 @@ contract BackGeoOracle is BaseHook {
         // only exactIn swaps are supported
         require(params.amountSpecified < 0, NotExactIn());
         _updatePool(key);
-        return (BackGeoOracle.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
+        return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }
 
-    function afterSwap(
+    function _afterSwap(
         address sender,
         PoolKey calldata key,
         IPoolManager.SwapParams calldata params,
         BalanceDelta,
         bytes calldata
-    ) external override onlyPoolManager returns (bytes4, int128) {
+    ) internal override onlyPoolManager returns (bytes4, int128) {
         // the unspecified currency is always the one user is buying, so we charge a fee to settle the backrun
         (BalanceDelta hookDelta, bool isBackrun) = _backrun(sender, key, params);
 
@@ -155,10 +155,10 @@ contract BackGeoOracle is BaseHook {
 
             // return to the user backrun amount in the specified currency
             poolManager.mint(sender, CurrencyLibrary.toId(currencySpecified), uint256(int256(backAmountSpecified)));
-            return (BackGeoOracle.afterSwap.selector, -backAmountUnspecified);
+            return (BaseHook.afterSwap.selector, -backAmountUnspecified);
         }
 
-        return (BackGeoOracle.afterSwap.selector, BalanceDelta.unwrap(hookDelta).toInt128());
+        return (BaseHook.afterSwap.selector, BalanceDelta.unwrap(hookDelta).toInt128());
     }
 
     /// @notice Increase the cardinality target for the given pool
