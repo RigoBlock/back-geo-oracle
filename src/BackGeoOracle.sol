@@ -77,7 +77,10 @@ contract BackGeoOracle is BaseHook {
         // This is to limit the fragmentation of pools using this oracle hook. In other words,
         // there may only be one pool per pair of tokens that use this hook. The tick spacing is set to the maximum
         // because we only allow max range liquidity in this pool.
-        require(key.fee == 0 && key.tickSpacing == TickMath.MAX_TICK_SPACING, OnlyOneOraclePoolAllowed());
+        if (key.fee != 0 || key.tickSpacing != TickMath.MAX_TICK_SPACING) {
+            revert OnlyOneOraclePoolAllowed();
+        }
+
         return BaseHook.beforeInitialize.selector;
     }
 
@@ -99,11 +102,13 @@ contract BackGeoOracle is BaseHook {
         bytes calldata
     ) internal override onlyPoolManager returns (bytes4) {
         int24 maxTickSpacing = TickMath.MAX_TICK_SPACING;
-        require(
-            params.tickLower == TickMath.minUsableTick(maxTickSpacing)
-                && params.tickUpper == TickMath.maxUsableTick(maxTickSpacing),
-            OraclePositionsMustBeFullRange()
-        );
+
+        if (params.tickLower != TickMath.minUsableTick(maxTickSpacing)
+            || params.tickUpper != TickMath.maxUsableTick(maxTickSpacing)
+        ) {
+            revert OraclePositionsMustBeFullRange();
+        }
+
         _updatePool(key);
         return BaseHook.beforeAddLiquidity.selector;
     }
@@ -125,7 +130,10 @@ contract BackGeoOracle is BaseHook {
         returns (bytes4, BeforeSwapDelta, uint24)
     {
         // only exactIn swaps are supported
-        require(params.amountSpecified < 0, NotExactIn());
+        if (params.amountSpecified >= 0) {
+            revert NotExactIn();
+        }
+
         _updatePool(key);
         return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }
