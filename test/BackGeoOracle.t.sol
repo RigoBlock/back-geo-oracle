@@ -15,7 +15,7 @@ import {CurrencyLibrary, Currency} from "v4-core/src/types/Currency.sol";
 import {PoolSwapTest} from "v4-core/src/test/PoolSwapTest.sol";
 import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
 import {LiquidityAmounts} from "v4-core/test/utils/LiquidityAmounts.sol";
-import {SafeCallback} from "v4-periphery/src/base/SafeCallback.sol";
+import {ImmutableState} from "v4-periphery/src/base/ImmutableState.sol";
 import {IPositionManager} from "v4-periphery/src/interfaces/IPositionManager.sol";
 import {SlippageCheck} from "v4-periphery/src/libraries/SlippageCheck.sol";
 import {EasyPosm} from "./utils/EasyPosm.sol";
@@ -111,7 +111,7 @@ contract BackGeoOracleTest is Test, Fixtures {
     }
 
     function testHookBeforeInitialize() public {
-        vm.expectRevert(SafeCallback.NotPoolManager.selector);
+        vm.expectRevert(ImmutableState.NotPoolManager.selector);
         hook.beforeInitialize(address(this), key, SQRT_PRICE_2_1);
 
         // cannot initialize already-initialized pool
@@ -182,6 +182,7 @@ contract BackGeoOracleTest is Test, Fixtures {
         assertEq(secondsPerLiquidityCumulativeX128s[0], 0);
     }
 
+    /// forge-config: default.allow_internal_expect_revert = true
     function testExactOutZeroForOneRevert() public {
         bool zeroForOne = true;
         int256 amountSpecified = 1e18;
@@ -216,8 +217,11 @@ contract BackGeoOracleTest is Test, Fixtures {
         );
     }
 
+    /// @dev This test is designed to allows external applications use the oracle safely without asserting that the target address has code.
+    /// @dev The following test reverts as expected, but foundry does not recognize the error (possibly another call is executed before the failing one).
+    /// forge-config: default.allow_internal_expect_revert = true
     function testBeforeAddLiquidityToken0isEoaRevert() public {
-        vm.skip(true); // bug in foundry, hardhat would catch the revert correctly
+        vm.skip(true); // skip as transaction reverts, but foundry asserts revert on a previous call
         PoolKey memory newKey = key;
         newKey.currency1 = Currency.wrap(address(2));
         uint128 additionalLiquidity = 100e18;
@@ -227,17 +231,12 @@ contract BackGeoOracleTest is Test, Fixtures {
             TickMath.getSqrtPriceAtTick(tickUpper),
             additionalLiquidity
         );
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                SlippageCheck.MaximumAmountExceeded.selector,
-                99999999999999999994,
-                141421356237309504875
-            )
-        );
+        manager.initialize(newKey, SQRT_PRICE_2_1);
+        vm.expectPartialRevert(SlippageCheck.MaximumAmountExceeded.selector);
         posm.mint(
-            key,
+            newKey,
             tickLower,
-            tickUpper ,
+            tickUpper,
             additionalLiquidity,
             amount0Expected + 1,
             amount1Expected + 1,
@@ -247,8 +246,9 @@ contract BackGeoOracleTest is Test, Fixtures {
         );
     }
 
+    /// @dev The following test reverts as expected, but foundry does not recognize the error (possibly another call is executed before the failing one).
     function testHookBeforeAddLiquidityRevert() public {
-        vm.skip(true); // bug in foundry, hardhat would catch the revert correctly
+        vm.skip(true); // skip as transaction reverts, but foundry asserts revert on a previous call
         uint128 additionalLiquidity = 100e18;
         (uint256 amount0Expected, uint256 amount1Expected) = LiquidityAmounts.getAmountsForLiquidity(
             SQRT_PRICE_2_1,
@@ -256,7 +256,6 @@ contract BackGeoOracleTest is Test, Fixtures {
             TickMath.getSqrtPriceAtTick(tickUpper - TickMath.MAX_TICK_SPACING),
             additionalLiquidity
         );
-
         vm.expectRevert(
             abi.encodeWithSelector(
                 CustomRevert.WrappedError.selector,
