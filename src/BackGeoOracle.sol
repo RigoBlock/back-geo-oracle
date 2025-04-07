@@ -190,8 +190,8 @@ contract BackGeoOracle is BaseHook {
         PoolId poolId = key.toId();
         (, int24 tick,,) = poolManager.getSlot0(poolId);
 
-        // we only have 1 stored observation
-        Oracle.Observation memory last = observations[PoolId.wrap(keccak256(abi.encode(key)))][0];
+        PoolId id = PoolId.wrap(keccak256(abi.encode(key)));
+        Oracle.Observation memory last = observations[id][states[id].index];
         int24 tickDelta = tick - last.prevTick;
 
         // we are only interested in the absolute tick delta
