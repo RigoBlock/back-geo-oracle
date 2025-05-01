@@ -21,7 +21,7 @@ import {SlippageCheck} from "v4-periphery/src/libraries/SlippageCheck.sol";
 import {EasyPosm} from "./utils/EasyPosm.sol";
 import {Fixtures} from "./utils/Fixtures.sol";
 import {Oracle} from "../libraries/Oracle.sol";
-import {BackGeoOracle} from "../src/BackGeoOracle.sol";
+import {BackGeoOracle, IMsgSender} from "../src/BackGeoOracle.sol";
 
 import "forge-std/console2.sol";
 import {console} from "forge-std/console.sol";
@@ -387,6 +387,14 @@ contract BackGeoOracleTest is Test, Fixtures {
         // Perform a swap to test afterSwap hook
         bool zeroForOne = true;
         int256 amountSpecified = -5e18;
+
+        // swapRouter is inherited from submodule, we return this address for msgSender() here
+        vm.mockCall(
+            address(swapRouter),
+            abi.encodeWithSelector(IMsgSender.msgSender.selector),
+            abi.encode(address(this))
+        );
+
         BalanceDelta swapDelta = swap(key, zeroForOne, amountSpecified, ZERO_BYTES);
         console2.log("amount0 delta 5 eth: %d", swapDelta.amount0());
         console2.log("amount1 delta 5 eth: %d", swapDelta.amount1());
@@ -403,6 +411,22 @@ contract BackGeoOracleTest is Test, Fixtures {
 
         // execute exactIn, 1 for 0
         swap(key, !zeroForOne, amountSpecified, ZERO_BYTES);
+    }
+
+    function testHookAfterSwapRevertIfMsgSenderNotImplemented() public {
+        bool zeroForOne = true;
+        int256 amountSpecified = -100e18;
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                CustomRevert.WrappedError.selector,
+                address(hook),
+                IHooks.afterSwap.selector,
+                abi.encodeWithSelector(BackGeoOracle.CallingRouterDoesNotReturnSender.selector),
+                abi.encodeWithSelector(Hooks.HookCallFailed.selector)
+            )
+        );
+        swap(key, zeroForOne, amountSpecified, ZERO_BYTES);
     }
 
     function testHookAfterSwapReturnDelta() public {

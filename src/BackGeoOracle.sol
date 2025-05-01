@@ -15,6 +15,10 @@ import {PoolId, PoolIdLibrary} from "v4-core/src/types/PoolId.sol";
 import {PoolKey} from "v4-core/src/types/PoolKey.sol";
 import {Oracle} from "../libraries/Oracle.sol";
 
+interface IMsgSender {
+    function msgSender() external view returns (address);
+}
+
 contract BackGeoOracle is BaseHook {
     using Oracle for Oracle.Observation[65535];
     using PoolIdLibrary for PoolKey;
@@ -31,6 +35,9 @@ contract BackGeoOracle is BaseHook {
 
     /// @notice Only exactInput swap types are allowed
     error NotExactIn();
+
+    /// @notice Original sender must be returned by the router in order to correctly credit ERC6909 in the event of a backrun
+    error CallingRouterDoesNotReturnSender();
 
     /// @member index The index of the last written observation for the pool
     /// @member cardinality The cardinality of the observations array for the pool
@@ -123,11 +130,12 @@ contract BackGeoOracle is BaseHook {
         return BaseHook.beforeRemoveLiquidity.selector;
     }
 
-    function _beforeSwap(address, PoolKey calldata key, IPoolManager.SwapParams calldata params, bytes calldata)
-        internal
-        override
-        onlyPoolManager
-        returns (bytes4, BeforeSwapDelta, uint24)
+    function _beforeSwap(
+        address,
+        PoolKey calldata key,
+        IPoolManager.SwapParams calldata params,
+        bytes calldata
+    ) internal override onlyPoolManager returns (bytes4, BeforeSwapDelta, uint24)
     {
         // only exactIn swaps are supported
         if (params.amountSpecified >= 0) {
@@ -146,7 +154,7 @@ contract BackGeoOracle is BaseHook {
         bytes calldata
     ) internal override onlyPoolManager returns (bytes4, int128) {
         // the unspecified currency is always the one user is buying, so we charge a fee to settle the backrun
-        (BalanceDelta hookDelta, bool isBackrun) = _backrun(sender, key, params, swapDelta);
+        (BalanceDelta hookDelta, bool isBackrun) = _backrun(key, params, swapDelta);
 
         if (isBackrun) {
             bool _isCurrency0Specified = (params.amountSpecified < 0 == params.zeroForOne);
@@ -161,8 +169,17 @@ contract BackGeoOracle is BaseHook {
             // the following condition must always be true since we only support ExactInput swaps
             assert(backAmountUnspecified < 0 && backAmountSpecified > 0);
 
+            address backrunAmountRecipient;
+
+            // retrieve original sender. The calling router is expected to implement msgSender() method
+            try IMsgSender(sender).msgSender() returns (address originalSender) {
+                backrunAmountRecipient = originalSender;
+            } catch {
+                revert CallingRouterDoesNotReturnSender();
+            }
+
             // return to the user backrun amount in the specified currency
-            poolManager.mint(sender, CurrencyLibrary.toId(currencySpecified), uint256(int256(backAmountSpecified)));
+            poolManager.mint(backrunAmountRecipient, CurrencyLibrary.toId(currencySpecified), uint256(int256(backAmountSpecified)));
             return (BaseHook.afterSwap.selector, -backAmountUnspecified);
         }
 
@@ -184,7 +201,6 @@ contract BackGeoOracle is BaseHook {
     }
 
     function _backrun(
-        address,
         PoolKey calldata key,
         IPoolManager.SwapParams memory params,
         BalanceDelta swapDelta
