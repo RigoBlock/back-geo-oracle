@@ -142,11 +142,11 @@ contract BackGeoOracle is BaseHook {
         address sender,
         PoolKey calldata key,
         IPoolManager.SwapParams calldata params,
-        BalanceDelta,
+        BalanceDelta swapDelta,
         bytes calldata
     ) internal override onlyPoolManager returns (bytes4, int128) {
         // the unspecified currency is always the one user is buying, so we charge a fee to settle the backrun
-        (BalanceDelta hookDelta, bool isBackrun) = _backrun(sender, key, params);
+        (BalanceDelta hookDelta, bool isBackrun) = _backrun(sender, key, params, swapDelta);
 
         if (isBackrun) {
             bool _isCurrency0Specified = (params.amountSpecified < 0 == params.zeroForOne);
@@ -183,10 +183,12 @@ contract BackGeoOracle is BaseHook {
         state.cardinalityNext = cardinalityNextNew;
     }
 
-    function _backrun(address, PoolKey calldata key, IPoolManager.SwapParams memory params)
-        private
-        returns (BalanceDelta hookDelta, bool shouldBackrun)
-    {
+    function _backrun(
+        address,
+        PoolKey calldata key,
+        IPoolManager.SwapParams memory params,
+        BalanceDelta swapDelta
+    ) private returns (BalanceDelta hookDelta, bool shouldBackrun) {
         PoolId poolId = key.toId();
         (, int24 tick,,) = poolManager.getSlot0(poolId);
 
@@ -206,11 +208,11 @@ contract BackGeoOracle is BaseHook {
             shouldBackrun = true;
             int128 numerator = int128(tickDelta) * 9999;
             int128 denominator = int128(Oracle.LIMIT_ABS_TICK_MOVE) * 10000;
-            params.amountSpecified = params.amountSpecified * numerator / denominator;
+            params.amountSpecified = swapDelta.amount0() * numerator / denominator;
         } else {
             // Full backrun
             shouldBackrun = true;
-            params.amountSpecified = params.amountSpecified * 9999 / 10000;
+            params.amountSpecified = swapDelta.amount0() * 9999 / 10000;
         }
 
         // early escape if no backrun is necessary, to save gas on small impact swaps
