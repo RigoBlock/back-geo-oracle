@@ -19,6 +19,11 @@ interface IMsgSender {
     function msgSender() external view returns (address);
 }
 
+/// @notice A Uniswap V4 hook implementing an oracle with backrun functionality for price impact mitigation.
+/// @dev This hook includes backrun logic that relies on swap routers implementing the IMsgSender interface when a backrun is triggered (see `_afterSwap`).
+/// @dev Swap routers interacting with this hook must implement the `msgSender()` method to return the address that will receive ERC6909 tokens in a backrun, which is critical for proper crediting of tokens.
+/// @dev Failure to implement `msgSender()` will cause transactions that trigger a backrun to revert, preventing the potential locking of ERC6909 tokens in the swap router.
+/// @dev The address returned by `msgSender()` should be capable of burning ERC6909 tokens to avoid locking the ERC6909 balance.
 contract BackGeoOracle is BaseHook {
     using Oracle for Oracle.Observation[65535];
     using PoolIdLibrary for PoolKey;
