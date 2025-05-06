@@ -9,10 +9,30 @@ evm_version = "cancun"
 optimizer = true
 optimizer_runs = 200
 
+#[profile.chains]
+#unichain = 130
+#unichain-sepolia = 1301
+
 [rpc_endpoints]
+mainnet = "${ETHEREUM_RPC_URL}"
+polygon = "${POLYGON_RPC_URL}"
+arbitrum = "${ARBITRUM_RPC_URL}"
+optimism = "${OPTIMISM_RPC_URL}"
+base = "${BASE_RPC_URL}"
+bsc = "${BSC_RPC_URL}"
+unichain = "${UNICHAIN_RPC_URL}"
 sepolia = "${SEPOLIA_RPC_URL}"
+unichain-sepolia= "${UNICHAIN_SEPOLIA_RPC_URL}"
 
 [etherscan]
+mainnet = { key = "${ETHERSCAN_API_KEY}" }
+polygon = { key = "${POLYGONSCAN_API_KEY}" }
+arbitrum = { key = "${ARBISCAN_API_KEY}" }
+optimism = { key = "${OPTIMISM_ETHERSCAN_API_KEY}" }
+base = { key = "${BASESCAN_API_KEY}" }
+bsc = { key = "${BSCSCAN_API_KEY}" }
+unichain = { key = "${UNISCAN_API_KEY}" }
 sepolia = { key = "${ETHERSCAN_API_KEY}" }
+unichain-sepolia = { key = "${UNISCAN_API_KEY}" }
 
 # See more config options https://github.com/foundry-rs/foundry/tree/master/config
