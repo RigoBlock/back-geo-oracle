@@ -45,7 +45,10 @@ contract Constants {
             POOLMANAGER = IPoolManager(address(0x00B036B58a818B1BC34d502D3fE730Db729e62AC));
         } else if (chainId == 11155111) {
             POOLMANAGER = IPoolManager(address(0xE03A1074c86CFeDd5C142C4F04F1a1536e203543));
+        } else if (chainId == 130) {
+            POOLMANAGER = IPoolManager(address(0x1F98400000000000000000000000000000000004));
         } else {
+            // default anvil pool manager. If a new chain is supported, must append correct address before this block
             POOLMANAGER = IPoolManager(address(0x5FbDB2315678afecb367f032d93F642f64180aa3));
         }
     }
